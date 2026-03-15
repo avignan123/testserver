@@ -3,16 +3,33 @@
 
 import os
 import time
-import base64
 from pathlib import Path
 from google import genai
 from google.genai import types
+from google.auth.credentials import Credentials as BaseCredentials
+
+
+class AccessTokenCredentials(BaseCredentials):
+    """Simple credentials wrapper for a raw access token."""
+
+    def __init__(self, token):
+        super().__init__()
+        self.token = token
+
+    def refresh(self, request):
+        pass
+
+    @property
+    def valid(self):
+        return True
+
 
 # Configuration
 PROJECT_ID = "tth-jam"
 LOCATION = "us-central1"
 MODEL_ID = "imagen-3.0-generate-002"
 OUTPUT_DIR = Path("generated_images")
+ACCESS_TOKEN = os.environ.get("GOOGLE_ACCESS_TOKEN", "")
 
 # Define your prompts here - add/remove as needed
 PROMPTS = [
@@ -28,10 +45,17 @@ def generate_images():
     """Generate images for all prompts using Vertex AI Imagen 3."""
     OUTPUT_DIR.mkdir(exist_ok=True)
 
+    if not ACCESS_TOKEN:
+        print("ERROR: Set GOOGLE_ACCESS_TOKEN environment variable.")
+        print("  Run: export GOOGLE_ACCESS_TOKEN=$(gcloud auth print-access-token)")
+        return
+
+    creds = AccessTokenCredentials(ACCESS_TOKEN)
     client = genai.Client(
         vertexai=True,
         project=PROJECT_ID,
         location=LOCATION,
+        credentials=creds,
     )
 
     print(f"Generating {len(PROMPTS)} images with {MODEL_ID}...")
