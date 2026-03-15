@@ -24,7 +24,7 @@ class AccessTokenCredentials(BaseCredentials):
 PROJECT_ID = "tth-jam-1"
 LOCATION = "us-central1"
 ACCESS_TOKEN = os.environ.get("GOOGLE_ACCESS_TOKEN", "")
-MODEL_ID = "gemini-2.0-flash-preview-image-generation"
+MODEL_ID = "gemini-2.5-flash-preview-05-20"
 OUTPUT_DIR = Path("generated_v2")
 IMAGES_PER_PROMPT = 3
 DELAY_BETWEEN_REQUESTS = 3
