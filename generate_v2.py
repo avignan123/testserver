@@ -178,6 +178,10 @@ def generate_shots():
                         contents=contents,
                         config=types.GenerateContentConfig(
                             response_modalities=["IMAGE", "TEXT"],
+                            image_config=types.ImageConfig(
+                                aspect_ratio="16:9",
+                                image_size="2K",
+                            ),
                             safety_settings=[
                                 types.SafetySetting(
                                     category="HARM_CATEGORY_DANGEROUS_CONTENT",
