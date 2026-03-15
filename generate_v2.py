@@ -4,9 +4,11 @@
 import os
 import time
 import base64
+import signal
 from pathlib import Path
 from google import genai
 from google.genai import types
+import httpx
 
 # --- Config ---
 API_KEY = os.environ.get("GEMINI_API_KEY", "")
@@ -16,6 +18,7 @@ IMAGES_PER_PROMPT = 3
 DELAY_BETWEEN_REQUESTS = 3
 MAX_RETRIES = 3
 RETRY_DELAY = 15
+REQUEST_TIMEOUT = 180  # 3 minutes per API call
 
 # --- Reference images ---
 REF_NARRATOR = Path("narrator-ref.png")
@@ -154,7 +157,10 @@ def generate_shots():
         else:
             print(f"  WARNING: {path} not found")
 
-    client = genai.Client(api_key=API_KEY)
+    client = genai.Client(
+        api_key=API_KEY,
+        http_options=types.HttpOptions(timeout=REQUEST_TIMEOUT * 1000),
+    )
 
     total = len(SHOTS)
     print(f"\nGenerating {total} shots x {IMAGES_PER_PROMPT} images = {total * IMAGES_PER_PROMPT} total images")
@@ -238,6 +244,13 @@ def generate_shots():
                     failed += 1
                 break  # Exit retry loop
 
+            except (httpx.TimeoutException, TimeoutError) as e:
+                wait = RETRY_DELAY * (attempt + 1)
+                print(f"  TIMEOUT (attempt {attempt+1}/{MAX_RETRIES}), waiting {wait}s...")
+                time.sleep(wait)
+                if attempt == MAX_RETRIES - 1:
+                    print(f"  FAILED after {MAX_RETRIES} retries (timeout): {e}")
+                    failed += 1
             except Exception as e:
                 err_str = str(e)
                 if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "quota" in err_str.lower():
@@ -246,6 +259,13 @@ def generate_shots():
                     time.sleep(wait)
                     if attempt == MAX_RETRIES - 1:
                         print(f"  FAILED after {MAX_RETRIES} retries: {e}")
+                        failed += 1
+                elif "timed out" in err_str.lower() or "timeout" in err_str.lower():
+                    wait = RETRY_DELAY * (attempt + 1)
+                    print(f"  TIMEOUT (attempt {attempt+1}/{MAX_RETRIES}), waiting {wait}s...")
+                    time.sleep(wait)
+                    if attempt == MAX_RETRIES - 1:
+                        print(f"  FAILED after {MAX_RETRIES} retries (timeout): {e}")
                         failed += 1
                 elif "not found" in err_str.lower() or "not supported" in err_str.lower():
                     print(f"  ERROR (model issue): {e}")
