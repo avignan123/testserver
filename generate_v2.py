@@ -10,7 +10,7 @@ from google.genai import types
 
 # --- Config ---
 API_KEY = os.environ.get("GEMINI_API_KEY", "")
-MODEL_ID = "gemini-2.5-flash-preview-image-generation"
+MODEL_ID = "gemini-2.5-flash-image"
 OUTPUT_DIR = Path("generated_v2")
 IMAGES_PER_PROMPT = 3
 DELAY_BETWEEN_REQUESTS = 3
