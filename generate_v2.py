@@ -7,23 +7,9 @@ import base64
 from pathlib import Path
 from google import genai
 from google.genai import types
-from google.auth.credentials import Credentials as BaseCredentials
-
-# --- Auth ---
-class AccessTokenCredentials(BaseCredentials):
-    def __init__(self, token):
-        super().__init__()
-        self.token = token
-    def refresh(self, request):
-        pass
-    @property
-    def valid(self):
-        return True
 
 # --- Config ---
-PROJECT_ID = "tth-jam-1"
-LOCATION = "us-central1"
-ACCESS_TOKEN = os.environ.get("GOOGLE_ACCESS_TOKEN", "")
+API_KEY = os.environ.get("GEMINI_API_KEY", "")
 MODEL_ID = "gemini-2.5-flash-preview-05-20"
 OUTPUT_DIR = Path("generated_v2")
 IMAGES_PER_PROMPT = 3
@@ -133,12 +119,11 @@ SHOTS = [
 
 
 def generate_shots():
-    """Generate all shots using Gemini API."""
+    """Generate all shots using Gemini API (direct, not Vertex AI)."""
     OUTPUT_DIR.mkdir(exist_ok=True)
 
-    if not ACCESS_TOKEN:
-        print("ERROR: Set GOOGLE_ACCESS_TOKEN environment variable.")
-        print("  Run: export GOOGLE_ACCESS_TOKEN=$(gcloud auth print-access-token)")
+    if not API_KEY:
+        print("ERROR: Set GEMINI_API_KEY environment variable.")
         return
 
     # Load reference images
@@ -152,13 +137,7 @@ def generate_shots():
         else:
             print(f"  WARNING: {path} not found")
 
-    creds = AccessTokenCredentials(ACCESS_TOKEN)
-    client = genai.Client(
-        vertexai=True,
-        project=PROJECT_ID,
-        location=LOCATION,
-        credentials=creds,
-    )
+    client = genai.Client(api_key=API_KEY)
 
     total = len(SHOTS)
     print(f"\nGenerating {total} shots x {IMAGES_PER_PROMPT} images = {total * IMAGES_PER_PROMPT} total images")
