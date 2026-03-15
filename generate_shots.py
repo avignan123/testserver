@@ -20,7 +20,7 @@ class AccessTokenCredentials(BaseCredentials):
         return True
 
 # --- Config ---
-PROJECT_ID = "tth-jam"
+PROJECT_ID = "tth-jam-1"
 LOCATION = "us-central1"
 MODEL_GENERATE = "imagen-3.0-generate-002"
 MODEL_EDIT = "imagen-3.0-capability-001"
