@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Generate priority shots for Tell-Tale Heart using Gemini."""
 
+import io
 import os
 import time
 from pathlib import Path
 from google import genai
 from google.genai import types
+from PIL import Image
 import httpx
 
 # --- Config ---
@@ -67,14 +69,26 @@ def generate_shots():
         print("ERROR: Set GEMINI_API_KEY environment variable.")
         return
 
-    # Load reference images
+    # Load and resize reference images (keep under 1MB each to avoid quota issues)
+    MAX_REF_BYTES = 1_000_000
+    MAX_REF_PIXELS = 1536  # max dimension
+
     print("Loading reference images...")
     ref_images = {}
     for name, path in [(NARRATOR, REF_NARRATOR), (OLD_MAN, REF_OLD_MAN),
                        (EYE, REF_EYE), (BEDROOM, REF_BEDROOM)]:
         if path.exists():
-            ref_images[name] = path.read_bytes()
-            print(f"  Loaded {name}: {len(ref_images[name]):,} bytes")
+            raw = path.read_bytes()
+            if len(raw) > MAX_REF_BYTES:
+                img = Image.open(io.BytesIO(raw))
+                img.thumbnail((MAX_REF_PIXELS, MAX_REF_PIXELS), Image.LANCZOS)
+                buf = io.BytesIO()
+                img.save(buf, format="PNG", optimize=True)
+                ref_images[name] = buf.getvalue()
+                print(f"  Loaded {name}: {len(raw):,} -> {len(ref_images[name]):,} bytes (resized)")
+            else:
+                ref_images[name] = raw
+                print(f"  Loaded {name}: {len(raw):,} bytes")
         else:
             print(f"  WARNING: {path} not found")
 
@@ -172,7 +186,7 @@ def generate_shots():
                     is_retryable = is_rate_limit or is_timeout
 
                     label = "Rate limited" if is_rate_limit else "Timeout" if is_timeout else "Error"
-                    print(f"  {label} on image {img_idx + 1} (attempt {attempt + 1}/{MAX_RETRIES}): {err_str[:120]}")
+                    print(f"  {label} on image {img_idx + 1} (attempt {attempt + 1}/{MAX_RETRIES}): {err_str[:300]}")
 
                     if is_retryable and attempt < MAX_RETRIES - 1:
                         wait = min(RETRY_BASE_DELAY * (2 ** attempt), 600)
