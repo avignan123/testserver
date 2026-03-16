@@ -92,7 +92,7 @@ def generate_shots():
     failed = 0
 
     for idx, (shot_num, prompt, ref_types) in enumerate(SHOTS, 1):
-        # Skip already generated shots
+        # Check how many images already exist for this shot
         existing = list(OUTPUT_DIR.glob(f"shot_{shot_num}_*.png"))
         if len(existing) >= IMAGES_PER_PROMPT:
             print(f"[{idx}/{total}] Shot {shot_num}: SKIPPED (already generated)")
@@ -101,101 +101,105 @@ def generate_shots():
 
         print(f"[{idx}/{total}] Shot {shot_num}: generating...")
 
-        for attempt in range(MAX_RETRIES):
-            try:
-                # Build contents: reference images + text prompt
-                contents = []
-                for ref_type in ref_types:
-                    if ref_type in ref_images:
-                        contents.append(types.Part.from_bytes(
-                            data=ref_images[ref_type],
-                            mime_type="image/png",
-                        ))
+        # Build contents once: reference images + text prompt
+        contents = []
+        for ref_type in ref_types:
+            if ref_type in ref_images:
+                contents.append(types.Part.from_bytes(
+                    data=ref_images[ref_type],
+                    mime_type="image/png",
+                ))
+        contents.append(prompt)
 
-                contents.append(prompt)
+        config = types.GenerateContentConfig(
+            response_modalities=["IMAGE", "TEXT"],
+            image_config=types.ImageConfig(
+                aspect_ratio="16:9",
+                image_size="2K",
+            ),
+            safety_settings=[
+                types.SafetySetting(
+                    category="HARM_CATEGORY_DANGEROUS_CONTENT",
+                    threshold="BLOCK_ONLY_HIGH",
+                ),
+                types.SafetySetting(
+                    category="HARM_CATEGORY_HARASSMENT",
+                    threshold="BLOCK_ONLY_HIGH",
+                ),
+                types.SafetySetting(
+                    category="HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                    threshold="BLOCK_ONLY_HIGH",
+                ),
+                types.SafetySetting(
+                    category="HARM_CATEGORY_HATE_SPEECH",
+                    threshold="BLOCK_ONLY_HIGH",
+                ),
+            ],
+        )
 
-                # Generate images one at a time
-                saved_count = 0
-                for img_idx in range(IMAGES_PER_PROMPT):
+        # Generate each image individually with per-image retries
+        start_idx = len(existing)
+        shot_failed = False
+
+        for img_idx in range(start_idx, IMAGES_PER_PROMPT):
+            img_saved = False
+
+            for attempt in range(MAX_RETRIES):
+                try:
                     response = client.models.generate_content(
                         model=MODEL_ID,
                         contents=contents,
-                        config=types.GenerateContentConfig(
-                            response_modalities=["IMAGE", "TEXT"],
-                            image_config=types.ImageConfig(
-                                aspect_ratio="16:9",
-                                image_size="2K",
-                            ),
-                            safety_settings=[
-                                types.SafetySetting(
-                                    category="HARM_CATEGORY_DANGEROUS_CONTENT",
-                                    threshold="BLOCK_ONLY_HIGH",
-                                ),
-                                types.SafetySetting(
-                                    category="HARM_CATEGORY_HARASSMENT",
-                                    threshold="BLOCK_ONLY_HIGH",
-                                ),
-                                types.SafetySetting(
-                                    category="HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                                    threshold="BLOCK_ONLY_HIGH",
-                                ),
-                                types.SafetySetting(
-                                    category="HARM_CATEGORY_HATE_SPEECH",
-                                    threshold="BLOCK_ONLY_HIGH",
-                                ),
-                            ],
-                        ),
+                        config=config,
                     )
 
                     if response.candidates and response.candidates[0].content:
                         for part in response.candidates[0].content.parts:
                             if part.inline_data and part.inline_data.mime_type.startswith("image/"):
-                                saved_count += 1
-                                filename = OUTPUT_DIR / f"shot_{shot_num}_{saved_count}.png"
+                                filename = OUTPUT_DIR / f"shot_{shot_num}_{img_idx + 1}.png"
                                 filename.write_bytes(part.inline_data.data)
                                 print(f"  Saved: {filename}")
+                                img_saved = True
+                                break
 
-                    if img_idx < IMAGES_PER_PROMPT - 1:
-                        time.sleep(DELAY_BETWEEN_IMAGES)
+                    if not img_saved:
+                        print(f"  WARNING: No image in response for image {img_idx + 1}")
+                    break  # Exit retry loop (success or empty response)
 
-                if saved_count > 0:
-                    succeeded += 1
-                else:
-                    print(f"  WARNING: No images returned")
-                    failed += 1
-                break  # Exit retry loop
+                except Exception as e:
+                    err_str = str(e)
+                    is_rate_limit = "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "quota" in err_str.lower()
+                    is_timeout = "timed out" in err_str.lower() or "timeout" in err_str.lower() or isinstance(e, (httpx.TimeoutException, TimeoutError))
+                    is_retryable = is_rate_limit or is_timeout
 
-            except (httpx.TimeoutException, TimeoutError) as e:
-                wait = min(RETRY_BASE_DELAY * (2 ** attempt), 600)
-                print(f"  TIMEOUT (attempt {attempt+1}/{MAX_RETRIES}), waiting {wait}s...")
-                time.sleep(wait)
-                if attempt == MAX_RETRIES - 1:
-                    print(f"  FAILED after {MAX_RETRIES} retries (timeout): {e}")
-                    failed += 1
-            except Exception as e:
-                err_str = str(e)
-                if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "quota" in err_str.lower():
-                    wait = min(RETRY_BASE_DELAY * (2 ** attempt), 600)
-                    print(f"  Rate limited (attempt {attempt+1}/{MAX_RETRIES}), waiting {wait}s...")
-                    time.sleep(wait)
-                    if attempt == MAX_RETRIES - 1:
-                        print(f"  FAILED after {MAX_RETRIES} retries: {e}")
-                        failed += 1
-                elif "timed out" in err_str.lower() or "timeout" in err_str.lower():
-                    wait = min(RETRY_BASE_DELAY * (2 ** attempt), 600)
-                    print(f"  TIMEOUT (attempt {attempt+1}/{MAX_RETRIES}), waiting {wait}s...")
-                    time.sleep(wait)
-                    if attempt == MAX_RETRIES - 1:
-                        print(f"  FAILED after {MAX_RETRIES} retries (timeout): {e}")
-                        failed += 1
-                elif "not found" in err_str.lower() or "not supported" in err_str.lower():
-                    print(f"  ERROR (model issue): {e}")
-                    failed += 1
-                    break
-                else:
-                    print(f"  ERROR: {e}")
-                    failed += 1
-                    break
+                    label = "Rate limited" if is_rate_limit else "Timeout" if is_timeout else "Error"
+                    print(f"  {label} on image {img_idx + 1} (attempt {attempt + 1}/{MAX_RETRIES}): {err_str[:120]}")
+
+                    if is_retryable and attempt < MAX_RETRIES - 1:
+                        wait = min(RETRY_BASE_DELAY * (2 ** attempt), 600)
+                        print(f"  Retrying in {wait}s...")
+                        time.sleep(wait)
+                    elif not is_retryable:
+                        print(f"  Non-retryable error, skipping shot")
+                        shot_failed = True
+                        break
+                    else:
+                        print(f"  FAILED after {MAX_RETRIES} attempts")
+                        shot_failed = True
+
+            if shot_failed:
+                break
+
+            # Delay between images within a shot
+            if img_idx < IMAGES_PER_PROMPT - 1:
+                time.sleep(DELAY_BETWEEN_IMAGES)
+
+        # Count results
+        final_count = len(list(OUTPUT_DIR.glob(f"shot_{shot_num}_*.png")))
+        if final_count > 0:
+            print(f"  Shot {shot_num}: {final_count}/{IMAGES_PER_PROMPT} images saved")
+            succeeded += 1
+        else:
+            failed += 1
 
         # Delay between shots
         if idx < total:
