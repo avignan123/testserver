@@ -13,9 +13,9 @@ API_KEY = os.environ.get("GEMINI_API_KEY", "")
 MODEL_ID = "gemini-2.5-flash-image"
 OUTPUT_DIR = Path("generated_priority")
 IMAGES_PER_PROMPT = 3
-DELAY_BETWEEN_REQUESTS = 3
-MAX_RETRIES = 3
-RETRY_DELAY = 15
+DELAY_BETWEEN_REQUESTS = 15
+MAX_RETRIES = 6
+RETRY_DELAY = 60
 REQUEST_TIMEOUT = 180  # 3 minutes per API call
 
 # --- Reference images ---
@@ -155,7 +155,7 @@ def generate_shots():
                                 print(f"  Saved: {filename}")
 
                     if img_idx < IMAGES_PER_PROMPT - 1:
-                        time.sleep(1)
+                        time.sleep(10)
 
                 if saved_count > 0:
                     succeeded += 1
