@@ -13,10 +13,10 @@ API_KEY = os.environ.get("GEMINI_API_KEY", "")
 MODEL_ID = "gemini-2.5-flash-image"
 OUTPUT_DIR = Path("generated_priority")
 IMAGES_PER_PROMPT = 3
-DELAY_BETWEEN_REQUESTS = 30  # seconds between shots
-DELAY_BETWEEN_IMAGES = 20   # seconds between images within a shot
-MAX_RETRIES = 8
-RETRY_BASE_DELAY = 90       # base retry delay for rate limits (exponential backoff)
+DELAY_BETWEEN_REQUESTS = 10  # seconds between shots
+DELAY_BETWEEN_IMAGES = 8    # seconds between images within a shot
+MAX_RETRIES = 5
+RETRY_BASE_DELAY = 30       # base retry delay for rate limits (exponential backoff)
 REQUEST_TIMEOUT = 180       # 3 minutes per API call
 
 # --- Reference images ---
