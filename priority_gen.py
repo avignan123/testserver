@@ -13,10 +13,11 @@ API_KEY = os.environ.get("GEMINI_API_KEY", "")
 MODEL_ID = "gemini-2.5-flash-image"
 OUTPUT_DIR = Path("generated_priority")
 IMAGES_PER_PROMPT = 3
-DELAY_BETWEEN_REQUESTS = 15
-MAX_RETRIES = 6
-RETRY_DELAY = 60
-REQUEST_TIMEOUT = 180  # 3 minutes per API call
+DELAY_BETWEEN_REQUESTS = 30  # seconds between shots
+DELAY_BETWEEN_IMAGES = 20   # seconds between images within a shot
+MAX_RETRIES = 8
+RETRY_BASE_DELAY = 90       # base retry delay for rate limits (exponential backoff)
+REQUEST_TIMEOUT = 180       # 3 minutes per API call
 
 # --- Reference images ---
 REF_NARRATOR = Path("narrator-ref.png")
@@ -155,7 +156,7 @@ def generate_shots():
                                 print(f"  Saved: {filename}")
 
                     if img_idx < IMAGES_PER_PROMPT - 1:
-                        time.sleep(10)
+                        time.sleep(DELAY_BETWEEN_IMAGES)
 
                 if saved_count > 0:
                     succeeded += 1
@@ -165,7 +166,7 @@ def generate_shots():
                 break  # Exit retry loop
 
             except (httpx.TimeoutException, TimeoutError) as e:
-                wait = RETRY_DELAY * (attempt + 1)
+                wait = min(RETRY_BASE_DELAY * (2 ** attempt), 600)
                 print(f"  TIMEOUT (attempt {attempt+1}/{MAX_RETRIES}), waiting {wait}s...")
                 time.sleep(wait)
                 if attempt == MAX_RETRIES - 1:
@@ -174,14 +175,14 @@ def generate_shots():
             except Exception as e:
                 err_str = str(e)
                 if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "quota" in err_str.lower():
-                    wait = RETRY_DELAY * (attempt + 1)
+                    wait = min(RETRY_BASE_DELAY * (2 ** attempt), 600)
                     print(f"  Rate limited (attempt {attempt+1}/{MAX_RETRIES}), waiting {wait}s...")
                     time.sleep(wait)
                     if attempt == MAX_RETRIES - 1:
                         print(f"  FAILED after {MAX_RETRIES} retries: {e}")
                         failed += 1
                 elif "timed out" in err_str.lower() or "timeout" in err_str.lower():
-                    wait = RETRY_DELAY * (attempt + 1)
+                    wait = min(RETRY_BASE_DELAY * (2 ** attempt), 600)
                     print(f"  TIMEOUT (attempt {attempt+1}/{MAX_RETRIES}), waiting {wait}s...")
                     time.sleep(wait)
                     if attempt == MAX_RETRIES - 1:
